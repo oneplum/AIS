@@ -8,13 +8,16 @@
 GLFWwindow* window;
 GLuint vbo;
 GLuint vao;
-GLuint program;
+GLuint programs[2];
 
 // triangle vertex position data
 const float triangle[] = {
-	 0.0f,  0.5f, 0.0f, // top
-	-0.5f, -0.5f, 0.0f,	// bottom left
-	 0.5f, -0.5f, 0.0f  // bottom right
+    -0.5f, 0.5f, 0.0f, // top left
+    0.5f, 0.5f, 0.0f,  // top right
+    0.5f, -0.5f, 0.0f,	// bottom right
+    -0.5f,  0.5f, 0.0f, // top left
+    0.5f, -0.5f, 0.0f,  // bottom right
+    -0.5f, -0.5f, 0.0f  // bottom left
 };
 
 // vertex shader code
@@ -32,7 +35,15 @@ const char* fragmentShaderSource =
 "out vec4 fragColor;\n"
 "void main()\n"
 "{\n"
-"  fragColor = vec4(1.0f, 1.0f, 1.0f, 1.0);\n"
+"  fragColor = vec4(0.9f, 0.5f, 0.2f, 1.0);\n"
+"}\0";
+
+const char* fragmentShaderSourceGreen =
+"#version 410 core\n"
+"out vec4 fragColor;\n"
+"void main()\n"
+"{\n"
+"  fragColor = vec4(0.2f, 0.9f, 0.2f, 1.0);\n"
 "}\0";
 
 static void init() {
@@ -43,15 +54,33 @@ static void init() {
 }
 
 static void draw() {
-  glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+  glClearColor(0.1f, 0.15f, 0.15f, 1.0f);
   GL( glClear(GL_COLOR_BUFFER_BIT) );
   
   GL( glBindVertexArray(vao) );
-  GL( glUseProgram(program) );
-  GL( glDrawArrays(GL_TRIANGLES, 0, 3) );
+  for(int i = 0; i < 2; i++) {
+    GL( glUseProgram(programs[i]) );
+    GL( glDrawArrays(GL_TRIANGLES, i*3, 3) );
+  }
   GL( glBindVertexArray(0) );
   
   glfwSwapBuffers(window);
+}
+
+static GLuint createFragmentShader(const GLchar **str) {
+    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+    GL( glShaderSource(fragmentShader, 1, str, NULL) );
+    GL( glCompileShader(fragmentShader) );
+    checkAndThrowShader(fragmentShader);
+    return fragmentShader;
+}
+
+static void linkShader2Program(int i, GLuint vertexShader, GLuint fragmentShader) {
+    programs[i] = glCreateProgram();
+    GL( glAttachShader(programs[i], vertexShader) );
+    GL( glAttachShader(programs[i], fragmentShader) );
+    GL( glLinkProgram(programs[i]) );
+    checkAndThrowProgram(programs[i]);
 }
 
 static void setupShaders() {
@@ -62,20 +91,16 @@ static void setupShaders() {
   checkAndThrowShader(vertexShader);
   
   // create the fragment shader
-  GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-  GL( glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL) );
-  GL( glCompileShader(fragmentShader) );
-  checkAndThrowShader(fragmentShader);
+  GLuint fragmentShader = createFragmentShader(&fragmentShaderSource);
+  GLuint fragmentShaderGreen = createFragmentShader(&fragmentShaderSourceGreen);
   
   // link shaders into program
-  program = glCreateProgram();
-  GL( glAttachShader(program, vertexShader) );
-  GL( glAttachShader(program, fragmentShader) );
-  GL( glLinkProgram(program) );
-  checkAndThrowProgram(program);
+  linkShader2Program(0, vertexShader, fragmentShader);
+  linkShader2Program(1, vertexShader, fragmentShaderGreen);
   
   GL( glDeleteShader(vertexShader) );
   GL( glDeleteShader(fragmentShader) );
+  GL( glDeleteShader(fragmentShaderGreen) );
 }
 
 static void setupGeometry() {
