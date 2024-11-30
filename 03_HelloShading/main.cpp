@@ -4,35 +4,40 @@
 #include <Vec2.h>
 #include "Teapot.h"
 #include "UnitPlane.h"
+#include "UnitCube.h"
 
 class MyGLApp : public GLApp {
 public:
   double time{};
+  const float degreesPerSecond{45.0f};
+  float angle{0.0};
 
   GLuint pFlat{};
   GLuint pGouraud{};
   GLuint pPhong{};
-  Mat4 modelMatrix{};
+  GLuint pLight{};
   Mat4 projectionMatrix{};
   Mat4 viewMatrix{};
   bool leftMouseDown{false};
   bool rightMouseDown{false};
   bool controlDown{false};
+  bool start{false};
 
-  GLint modelViewProjectionMatrixUniform{-1};
+  GLint modelViewProjectionMatrixUniform[3]{-1,-1,-1};
+  GLint modelViewMatrixUniform[3]{-1,-1,-1};
+  GLint modelViewInverseTransposeMatrixUniform[3]{-1,-1,-1};
+  GLint lightPositionUniform[3]{-1,-1,-1};
+  GLint lightViewProjectionMatrixUniform{-1};
 
   enum class Shading {
-    FLAT, GOURAUD, PHONG
+    FLAT=0, GOURAUD=1, PHONG=2
   };
 
   Shading shading{Shading::FLAT};
 
-  Vec3 kd = { 1, 1, 1 }; // material diffuse color
-  GLint kdUniform{-1};
-
-  GLuint vbos[4]{ };
-  GLuint vaos[2]{ };
-  GLuint eboTeapot{};
+  GLuint vbos[5]{ };
+  GLuint vaos[3]{ };
+  GLuint ebos[2]{ };
 
   // camera
   bool cameraActive{false};
@@ -49,6 +54,12 @@ public:
     time = glfwGetTime();
     setupShaders();
     setupGeometry();
+
+    GL(glEnable(GL_CULL_FACE));
+    GL(glCullFace(GL_BACK));
+    GL(glEnable(GL_DEPTH_TEST));
+    GL(glDepthFunc(GL_LESS));
+
     GL(glClearColor(0.0f, 0.0f, 0.0f, 1.0f));
   }
 
@@ -56,18 +67,12 @@ public:
     switch (shading) {
       case Shading::FLAT:
         GL(glUseProgram(pFlat));
-        kd = { 0.8f, 0.0f, 0.0f };
-        GL(glUniform3fv(kdUniform, 1, kd));
         break;
       case Shading::GOURAUD:
         GL(glUseProgram(pGouraud));
-        kd = { 0.0f, 0.8f, 0.0f };
-        GL(glUniform3fv(kdUniform, 1, kd));
         break;
       case Shading::PHONG:
         GL(glUseProgram(pPhong));
-        kd = { 0.0f, 0.0f, 0.8f };
-        GL(glUniform3fv(kdUniform, 1, kd));
         break;
     }
   }
@@ -77,28 +82,57 @@ public:
     double d = t - time;
     time = t;
 
+    if (start) {
+      angle -= degreesPerSecond * float(d);
+    }
+
     GL(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
 
-    selectShading();
     viewMatrix = Mat4::translation(viewPosition[0], viewPosition[1], viewPosition[2]);
     viewMatrix = viewMatrix * Mat4::rotationX(viewRotation[0]);
     viewMatrix = viewMatrix * Mat4::rotationY(viewRotation[1]);
     viewMatrix = viewMatrix * Mat4::rotationZ(viewRotation[2]);
 
-    modelMatrix = Mat4();
-    modelMatrix = modelMatrix * Mat4::scaling(100, 100, 100);
+    // render light
+    GL(glUseProgram(pLight));
+    Mat4 modelMatrix = Mat4::rotationY(angle) *  Mat4::translation(-35, 35, 35);
+    const Vec4 lightPosition =  viewMatrix * modelMatrix * Vec4(0, 0, 0, 1);
+
     Mat4 modelViewProjection = projectionMatrix * viewMatrix * modelMatrix;
-    GL(glUniformMatrix4fv(modelViewProjectionMatrixUniform, 1, GL_TRUE, modelViewProjection));
+    GL(glUniformMatrix4fv(lightViewProjectionMatrixUniform, 1, GL_TRUE, modelViewProjection));
+
+    GL(glBindVertexArray(vaos[2]));
+    GL(glDrawElements(GL_TRIANGLES, sizeof(UnitCube::indices) / sizeof(UnitCube::indices[0]), GL_UNSIGNED_INT, (void*)0));
+
+    selectShading();
+
+    GL(glUniform4fv(lightPositionUniform[int(shading)], 1, lightPosition));
+
+    modelMatrix = Mat4::scaling(100, 100, 100);
+
+    Mat4 modelView = viewMatrix * modelMatrix;
+    modelViewProjection = projectionMatrix * modelView;
+    Mat4 modelViewIT = Mat4::transpose(Mat4::inverse(modelView));
+
+    GL(glUniformMatrix4fv(modelViewProjectionMatrixUniform[int(shading)], 1, GL_TRUE, modelViewProjection));
+    GL(glUniformMatrix4fv(modelViewMatrixUniform[int(shading)], 1, GL_TRUE, modelView));
+    GL(glUniformMatrix4fv(modelViewInverseTransposeMatrixUniform[int(shading)], 1, GL_TRUE, modelViewIT));
+
     GL(glBindVertexArray(vaos[0]));
     GL(glDrawArrays(GL_TRIANGLES, 0, sizeof(UnitPlane::vertices) / sizeof(UnitPlane::vertices[0])));
 
-    modelMatrix = Mat4();
-    modelViewProjection = projectionMatrix * viewMatrix * modelMatrix;
-    GL(glUniformMatrix4fv(modelViewProjectionMatrixUniform, 1, GL_TRUE, modelViewProjection));
+    modelMatrix = {};
+    modelView = viewMatrix * modelMatrix;
+    modelViewProjection = projectionMatrix * modelView;
+    modelViewIT = Mat4::transpose(Mat4::inverse(modelView));
+
+    GL(glUniformMatrix4fv(modelViewProjectionMatrixUniform[int(shading)], 1, GL_TRUE, modelViewProjection));
+    GL(glUniformMatrix4fv(modelViewMatrixUniform[int(shading)], 1, GL_TRUE, modelView));
+    GL(glUniformMatrix4fv(modelViewInverseTransposeMatrixUniform[int(shading)], 1, GL_TRUE, modelViewIT));
+
     GL(glBindVertexArray(vaos[1]));
     GL(glDrawElements(GL_TRIANGLES, sizeof(Teapot::indices) / sizeof(Teapot::indices[0]), GL_UNSIGNED_INT, (void*)0));
     GL(glBindVertexArray(0));
-
   }
 
   virtual void resize(int width, int height) override {
@@ -141,8 +175,10 @@ public:
     GL(glLinkProgram(pFlat));
     checkAndThrowProgram(pFlat);
 
-    modelViewProjectionMatrixUniform = glGetUniformLocation(pFlat, "MVP");
-    kdUniform = glGetUniformLocation(pFlat, "kd");
+    modelViewProjectionMatrixUniform[int(Shading::FLAT)] = glGetUniformLocation(pFlat, "MVP");
+    modelViewMatrixUniform[int(Shading::FLAT)] = glGetUniformLocation(pFlat, "MV");
+    modelViewInverseTransposeMatrixUniform[int(Shading::FLAT)] = glGetUniformLocation(pFlat, "MVit");
+    lightPositionUniform[int(Shading::FLAT)] = glGetUniformLocation(pFlat, "lightPosition");
 
     GL(glDeleteShader(vertexShader));
     GL(glDeleteShader(fragmentShader));
@@ -159,6 +195,11 @@ public:
     GL(glDeleteShader(vertexShader));
     GL(glDeleteShader(fragmentShader));
 
+    modelViewProjectionMatrixUniform[int(Shading::GOURAUD)] = glGetUniformLocation(pGouraud, "MVP");
+    modelViewMatrixUniform[int(Shading::GOURAUD)] = glGetUniformLocation(pGouraud, "MV");
+    modelViewInverseTransposeMatrixUniform[int(Shading::GOURAUD)] = glGetUniformLocation(pGouraud, "MVit");
+    lightPositionUniform[int(Shading::GOURAUD)] = glGetUniformLocation(pGouraud, "lightPosition");
+
     vertexSrcPath =  "res/shaders/phong.vert";
     fragmentSrcPath =  "res/shaders/phong.frag";
     vertexShader = createShaderFromFile(GL_VERTEX_SHADER, vertexSrcPath);
@@ -171,6 +212,25 @@ public:
     GL(glDeleteShader(vertexShader));
     GL(glDeleteShader(fragmentShader));
 
+    modelViewProjectionMatrixUniform[int(Shading::PHONG)] = glGetUniformLocation(pPhong, "MVP");
+    modelViewMatrixUniform[int(Shading::PHONG)] = glGetUniformLocation(pPhong, "MV");
+    modelViewInverseTransposeMatrixUniform[int(Shading::PHONG)] = glGetUniformLocation(pPhong, "MVit");
+    lightPositionUniform[int(Shading::PHONG)] = glGetUniformLocation(pPhong, "lightPosition");
+
+    vertexSrcPath =  "res/shaders/light.vert";
+    fragmentSrcPath =  "res/shaders/light.frag";
+    vertexShader = createShaderFromFile(GL_VERTEX_SHADER, vertexSrcPath);
+    fragmentShader = createShaderFromFile(GL_FRAGMENT_SHADER, fragmentSrcPath);
+    pLight = glCreateProgram();
+    GL(glAttachShader(pLight, vertexShader));
+    GL(glAttachShader(pLight, fragmentShader));
+    GL(glLinkProgram(pLight));
+    checkAndThrowProgram(pLight);
+    GL(glDeleteShader(vertexShader));
+    GL(glDeleteShader(fragmentShader));
+
+    lightViewProjectionMatrixUniform = glGetUniformLocation(pLight, "MVP");
+
     selectShading();
   }
 
@@ -178,9 +238,9 @@ public:
     const GLuint vertexPositionLocation = GLuint(glGetAttribLocation(pPhong, "vertexPosition"));
     const GLuint vertexNormalLocation = GLuint(glGetAttribLocation(pPhong, "vertexNormal"));
 
-    GL(glGenVertexArrays(2, vaos));
-    GL(glGenBuffers(4, vbos));
-    GL(glGenBuffers(1, &eboTeapot));
+    GL(glGenVertexArrays(3, vaos));
+    GL(glGenBuffers(5, vbos));
+    GL(glGenBuffers(2, ebos));
 
     // unit plane in xy-plane
     GL(glBindVertexArray(vaos[0]));
@@ -208,8 +268,19 @@ public:
     GL(glVertexAttribPointer(vertexNormalLocation, 3, GL_FLOAT, GL_FALSE, 0, (void*)0));
     GL(glEnableVertexAttribArray(vertexNormalLocation));
     // setup indices for indexed drawing the teapot
-    GL(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, eboTeapot));
+    GL(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebos[0]));
     GL(glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(Teapot::indices), Teapot::indices, GL_STATIC_DRAW));
+
+    // light
+    GL(glBindVertexArray(vaos[2]));
+    // setup vertices
+    GL(glBindBuffer(GL_ARRAY_BUFFER, vbos[4]));
+    GL(glBufferData(GL_ARRAY_BUFFER, sizeof(UnitCube::vertices), UnitCube::vertices, GL_STATIC_DRAW));
+    GL(glEnableVertexAttribArray(vertexPositionLocation));
+    GL(glVertexAttribPointer(vertexPositionLocation, 3, GL_FLOAT, GL_FALSE, 0, (void*)0));
+    // setup indices for indexed drawing the cube
+    GL(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebos[1]));
+    GL(glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(UnitCube::indices), UnitCube::indices, GL_STATIC_DRAW));
 
     GL(glBindVertexArray(0));
   }
@@ -233,6 +304,17 @@ public:
         case GLFW_KEY_P:
           shading = Shading::PHONG;
           std::cout << "switched to PHONG shading" << std::endl;
+          break;
+        case GLFW_KEY_SPACE:
+          start = !start;
+          std::cout << "light animation: " << start << std::endl;
+          break;
+        case GLFW_KEY_R:
+          std::cout << "reset" << std::endl;
+          start = false;
+          angle = 0;
+          viewPosition = Vec3{ 0, 0, -100 };
+          viewRotation = Vec3{ -45, 0, 0 };
           break;
       }
 
