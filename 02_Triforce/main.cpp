@@ -5,20 +5,30 @@
 class MyGLApp : public GLApp {
 public:
   double time{0.0};
+  const float degreePreSecond{45.0f};
+  float angle{0.0f};
   Mat4 modelView{};
   Mat4 projection{};
+  bool start{false};
+
   GLuint program{0};
   GLint modelViewMatrixUniform{-1};
   GLint projectionMatrixUniform{-1};
   GLuint vbos{0};
-  GLuint vaos{0};
+  GLuint vaos[3]{};
 
   constexpr static float sqrt3{ 1.7320508076f };
 
-  const GLfloat vertexPositions[9] = {
-     1.5f, 2.0f, 0.0f,
-    -1.5f, 0.0f, 0.0f,
-     1.5f, 0.0f, 0.0f
+  constexpr static GLfloat vertices[] = {
+      0.0f, sqrt3, 0.0f, 1.0f, 0.0f, 0.0f,
+      -1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f,
+      1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f,
+      -1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f,
+      -2.0f, -sqrt3, 0.0f, 0.0f, 0.0f, 1.0f,
+      0.0f, -sqrt3, 0.0f, 0.0f, 1.0f, 1.0f,
+      1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f,
+      0.0f, -sqrt3, 0.0f, 0.0f, 1.0f, 1.0f,
+      2.0f, -sqrt3, 0.0f, 0.0f, 1.0f, 0.0f
   };
   
   MyGLApp()
@@ -36,15 +46,39 @@ public:
     const double t = glfwGetTime();
     const double d = t - time;
     time = t;
+    if (start) {
+        angle += float(degreePreSecond * d);
+    }
+    
     
     GL(glClear(GL_COLOR_BUFFER_BIT));
     
     GL(glUseProgram(program));
-    modelView = Mat4::translation(0.0f, -1.0f, 0.0f);
+    // triangle upper
+    modelView = Mat4::translation(0.0f, sqrt3/2, 0.0f);
+    modelView = modelView * Mat4::rotationX(angle);
+    modelView = modelView * Mat4::translation(0.0f, -sqrt3/2, 0.0f);
     GL(glUniformMatrix4fv(modelViewMatrixUniform, 1, GL_TRUE, modelView));
+    GL(glBindVertexArray(vaos[0]));
+    GL(glDrawArrays(GL_TRIANGLES, 0, sizeof(vertices) / sizeof(vertices[0]) / 18));
     
-    GL(glBindVertexArray(vaos));
-    GL(glDrawArrays(GL_TRIANGLES, 0, sizeof(vertexPositions) / sizeof(vertexPositions[0]) / 3));
+    // triangle left
+    modelView = Mat4::translation(-2.0f, -sqrt3*2, 0.0f);
+    modelView = modelView * Mat4::translation(1.0f, sqrt3*4/3, 0.0f);
+    modelView = modelView * Mat4::rotationZ(-angle);
+    modelView = modelView * Mat4::translation(1.0f, sqrt3*2/3, 0.0f);
+    GL(glUniformMatrix4fv(modelViewMatrixUniform, 1, GL_TRUE, modelView));
+    GL(glBindVertexArray(vaos[1]));
+    GL(glDrawArrays(GL_TRIANGLES, 0, sizeof(vertices) / sizeof(vertices[0]) / 18));
+    
+    // triangle right
+    modelView = Mat4::translation(1.0f, 0.0f, 0.0f);
+    modelView = modelView * Mat4::rotationY(angle);
+    modelView = modelView * Mat4::translation(-1.0f, 0.0f, 0.0f);
+    GL(glUniformMatrix4fv(modelViewMatrixUniform, 1, GL_TRUE, modelView));
+    GL(glBindVertexArray(vaos[2]));
+    GL(glDrawArrays(GL_TRIANGLES, 0, sizeof(vertices) / sizeof(vertices[0]) / 18));
+    
     GL(glBindVertexArray(0));
     GL(glUseProgram(0));
   }
@@ -106,23 +140,48 @@ public:
   
   void setupGeometry() {
     const GLuint vertexPos = GLuint(glGetAttribLocation(program, "vertexPosition"));
+    const GLuint vertexColor = GLuint(glGetAttribLocation(program, "vertexColor"));
 
-    GL(glGenVertexArrays(1, &vaos));
-    GL(glBindVertexArray(vaos));
+    GL(glGenVertexArrays(3, vaos));
     
     GL(glGenBuffers(1, &vbos));
     GL(glBindBuffer(GL_ARRAY_BUFFER, vbos));
-    GL(glBufferData(GL_ARRAY_BUFFER, sizeof(vertexPositions), vertexPositions,
-                    GL_STATIC_DRAW));
+    GL(glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW));
     
+    // vao upper
+    GL(glBindVertexArray(vaos[0]));
     GL(glEnableVertexAttribArray(vertexPos));
-    GL(glVertexAttribPointer(vertexPos, 3, GL_FLOAT, GL_FALSE, 0, (void*)0));
-    
-    GL(glBindVertexArray(0););
+    GL(glVertexAttribPointer(vertexPos, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0));
+    GL(glEnableVertexAttribArray(vertexColor));
+    GL(glVertexAttribPointer(vertexColor, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3*sizeof(float))));
+      
+    // vao left
+    GL(glBindVertexArray(vaos[1]));
+    GL(glEnableVertexAttribArray(vertexPos));
+    GL(glVertexAttribPointer(vertexPos, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(18*sizeof(float))));
+    GL(glEnableVertexAttribArray(vertexColor));
+    GL(glVertexAttribPointer(vertexColor, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(21*sizeof(float))));
+      
+    // vao right
+    GL(glBindVertexArray(vaos[2]));
+    GL(glEnableVertexAttribArray(vertexPos));
+    GL(glVertexAttribPointer(vertexPos, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(36*sizeof(float))));
+    GL(glEnableVertexAttribArray(vertexColor));
+    GL(glVertexAttribPointer(vertexColor, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(39*sizeof(float))));
+
+    GL(glBindVertexArray(0));
   }
   
-  virtual void keyboard(int key, int scancode, int action, int mods) override
-  {
+  virtual void keyboard(int key, int scancode, int action, int mods) override {
+      if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+          closeWindow();
+      }
+      if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
+          start = !start;
+      }
+      if (key == GLFW_KEY_R && action == GLFW_PRESS) {
+          angle = 0.0f;
+      }
   }
 };
 
@@ -131,4 +190,3 @@ int main(int argc, char** argv) {
   myApp.run();
   return EXIT_SUCCESS;
 }
-
