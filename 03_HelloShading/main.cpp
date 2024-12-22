@@ -93,7 +93,6 @@ public:
     viewMatrix = viewMatrix * Mat4::rotationY(viewRotation[1]);
     viewMatrix = viewMatrix * Mat4::rotationZ(viewRotation[2]);
 
-    // render light
     GL(glUseProgram(pLight));
     Mat4 modelMatrix = Mat4::rotationY(angle) *  Mat4::translation(-35, 35, 35);
     const Vec4 lightPosition =  viewMatrix * modelMatrix * Vec4(0, 0, 0, 1);

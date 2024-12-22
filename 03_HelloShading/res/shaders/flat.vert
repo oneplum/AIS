@@ -9,9 +9,9 @@ uniform mat4 MVP; // model-view-projection Matrix
 uniform mat4 MV;
 uniform mat4 MVit;
 
-uniform vec3 ka = vec3(0.05, 0.05, 0.05);
+uniform vec3 ka = vec3(0.1, 0.1, 0.1);
 uniform vec3 kd = vec3(0.8, 0.0, 0.0);
-uniform vec3 ks = vec3(1, 1, 1);
+uniform vec3 ks = vec3(1.0, 1.0, 1.0);
 uniform float shininess = 50;
 
 uniform vec3 la = vec3(0.9, 0.9, 0.9);

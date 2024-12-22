@@ -3,7 +3,7 @@
 in vec3 positionViewSpace;
 in vec3 normalViewSpace;
 
-uniform vec3 ka = vec3(0.05, 0.05, 0.05);
+uniform vec3 ka = vec3(0.1, 0.1, 0.1);
 uniform vec3 kd = vec3(0.0, 0.0, 0.8);
 uniform vec3 ks = vec3(1.0, 1.0, 1.0);
 uniform float shininess = 50;
