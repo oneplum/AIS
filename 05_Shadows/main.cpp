@@ -1,6 +1,7 @@
 #include <ImageLoader.h>
 #include <GLApp.h>
 #include <Vec2.h>
+#include <GLFramebuffer.h>
 #include "Teapot.h"
 #include "UnitPlane.h"
 #include "UnitCube.h"
@@ -27,6 +28,7 @@ public:
   GLProgram pPhongBump;
   GLProgram pPhongBumpTex;
   GLProgram pLight;
+  GLProgram pShadow;
 
   GLArray lightArray;
   GLBuffer lightPosBuffer{GL_ARRAY_BUFFER};
@@ -47,6 +49,15 @@ public:
   GLBuffer teapotTexCoordBuffer{GL_ARRAY_BUFFER};
   GLBuffer teapotIndexBuffer{GL_ELEMENT_ARRAY_BUFFER};
 
+  GLFramebuffer framebuffer;
+  GLDepthTexture shadowMap;
+  const Mat4 cliptToTextureMatrix {
+    0.5f, 0.0f, 0.0f, 0.5f,
+    0.0f, 0.5f, 0.0f, 0.5f,
+    0.0f, 0.0f, 0.5f, 0.5f,
+    0.0f, 0.0f, 0.0f, 1.0f
+  };
+
   bool leftMouseDown{false};
   bool rightMouseDown{false};
   bool controlDown{false};
@@ -64,8 +75,11 @@ public:
     GLApp(800,600,1,"Assignment 05 - Hello Shadows"),
     pPhongBump{GLProgram::createFromFile("res/phongBump.vert","res/phongBump.frag")},
     pPhongBumpTex{GLProgram::createFromFile("res/phongBump.vert","res/phongBumpTex.frag")},
-    pLight{GLProgram::createFromFile("res/light.vert","res/light.frag")}
-  {}
+    pLight{GLProgram::createFromFile("res/light.vert","res/light.frag")},
+    pShadow{GLProgram::createFromFile("res/shadow.vert","res/shadow.frag")}
+    {
+      shadowMap.setEmpty(1024,1024);
+    }
 
   virtual void init() override {
     setupTextures();
@@ -97,52 +111,80 @@ public:
   }
 
   virtual void draw() override {
-    GL(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
+      GL(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
 
-    Mat4 viewMatrix = Mat4::lookAt(viewPosition, {0,0,0}, {0,1,0});
-    viewMatrix = viewMatrix * Mat4::rotationX(viewRotation[0]);
-    viewMatrix = viewMatrix * Mat4::rotationY(viewRotation[1]);
-    viewMatrix = viewMatrix * Mat4::rotationZ(viewRotation[2]);
+      Mat4 viewMatrix = Mat4::lookAt(viewPosition, {0,0,0}, {0,1,0});
+      viewMatrix = viewMatrix * Mat4::rotationX(viewRotation[0]);
+      viewMatrix = viewMatrix * Mat4::rotationY(viewRotation[1]);
+      viewMatrix = viewMatrix * Mat4::rotationZ(viewRotation[2]);
 
-    pLight.enable();
+      const Mat4 lightModelMatrix = Mat4::rotationY(-light.angle) *  Mat4::translation(-80, 60, 80);
+      const Vec4 lightPosition =  viewMatrix * lightModelMatrix * Vec4(0, 0, 0, 1);
+      const Mat4 lightProjectionMatrix = Mat4::perspective(60.0f,float(shadowMap.getWidth())/float(shadowMap.getHeight()), 1.0f, 400);
+      const Mat4 lightViewMatrix = Mat4::lookAt(lightModelMatrix * Vec3{0,0,0}, {0,0,0}, {0,1,0});
+      const Mat4 worldToShadowMatrix = cliptToTextureMatrix*lightProjectionMatrix*lightViewMatrix;
+      
+      framebuffer.bind(shadowMap);
+      GL(glViewport(0, 0, GLsizei(shadowMap.getWidth()), GLsizei(shadowMap.getHeight())));
+      GL(glClear(GL_DEPTH_BUFFER_BIT));
+      
+      Mat4 modelMatrix = Mat4::scaling(100, 100, 100);
+      
+      pShadow.enable();
+      pShadow.setUniform("MVP", lightProjectionMatrix*lightViewMatrix*modelMatrix);
+      planeArray.bind();
+      GL(glDrawArrays(GL_TRIANGLES, 0, sizeof(UnitPlane::vertices) / sizeof(UnitPlane::vertices[0])));
+      modelMatrix = {};
+      pShadow.setUniform("MVP", lightProjectionMatrix*lightViewMatrix*modelMatrix);
+      teapotArray.bind();
+      GL(glDrawElements(GL_TRIANGLES, sizeof(Teapot::indices) / sizeof(Teapot::indices[0]), GL_UNSIGNED_INT, (void*)0));
+      
+      framebuffer.unbind2D();
+      const Dimensions dim = glEnv.getFramebufferSize();
+      GL(glViewport(0, 0, GLsizei(dim.width), GLsizei(dim.height)));
+      GL(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
+        
+      pLight.enable();
+      pLight.setUniform("MVP", projectionMatrix * viewMatrix * lightModelMatrix);
+      lightArray.bind();
+      GL(glDrawElements(GL_TRIANGLES, sizeof(UnitCube::indices) / sizeof(UnitCube::indices[0]), GL_UNSIGNED_INT, (void*)0));
 
-    const Mat4 lightModelMatrix = Mat4::rotationY(-light.angle) *  Mat4::translation(-35, 35, 35);
-    const Vec4 lightPosition =  viewMatrix * lightModelMatrix * Vec4(0, 0, 0, 1);
+      pPhongBumpTex.enable();
+      modelMatrix = Mat4::scaling(100, 100, 100);
+      Mat4 modelView = viewMatrix * modelMatrix;
+      Mat4 modelViewProjection = projectionMatrix * modelView;
+      Mat4 modelViewIT = Mat4::transpose(Mat4::inverse(modelView));
 
-    pLight.setUniform("MVP", projectionMatrix * viewMatrix * lightModelMatrix);
-    lightArray.bind();
-    GL(glDrawElements(GL_TRIANGLES, sizeof(UnitCube::indices) / sizeof(UnitCube::indices[0]), GL_UNSIGNED_INT, (void*)0));
+      pPhongBumpTex.setUniform("MVP", modelViewProjection);
+      pPhongBumpTex.setUniform("MV", modelView);
+      pPhongBumpTex.setUniform("M", modelMatrix);
+      pPhongBumpTex.setUniform("worldToShadow", worldToShadowMatrix);
+      pPhongBumpTex.setUniform("MVit", modelViewIT);
+      pPhongBumpTex.setUniform("lightPosition", lightPosition);
+      pPhongBumpTex.setTexture("td", stonesDiffuse,0);
+      pPhongBumpTex.setTexture("ts", stonesSpecular,1);
+      pPhongBumpTex.setTexture("tn", stonesNormals,2);
+      pPhongBumpTex.setTexture("shadowMap", shadowMap, 3);
+      planeArray.bind();
+      GL(glDrawArrays(GL_TRIANGLES, 0, sizeof(UnitPlane::vertices) / sizeof(UnitPlane::vertices[0])));
 
-    pPhongBumpTex.enable();
-    Mat4 modelMatrix = Mat4::scaling(100, 100, 100);
-    Mat4 modelView = viewMatrix * modelMatrix;
-    Mat4 modelViewProjection = projectionMatrix * modelView;
-    Mat4 modelViewIT = Mat4::transpose(Mat4::inverse(modelView));
+      modelMatrix = {};
+      modelView = viewMatrix * modelMatrix;
+      modelViewProjection = projectionMatrix * modelView;
+      modelViewIT = Mat4::transpose(Mat4::inverse(modelView));
 
-    pPhongBumpTex.setUniform("MVP", modelViewProjection);
-    pPhongBumpTex.setUniform("MV", modelView);
-    pPhongBumpTex.setUniform("MVit", modelViewIT);
-    pPhongBumpTex.setUniform("lightPosition", lightPosition);
-    pPhongBumpTex.setTexture("td", stonesDiffuse,0);
-    pPhongBumpTex.setTexture("ts", stonesSpecular,1);
-    pPhongBumpTex.setTexture("tn", stonesNormals,2);
-    planeArray.bind();
-    GL(glDrawArrays(GL_TRIANGLES, 0, sizeof(UnitPlane::vertices) / sizeof(UnitPlane::vertices[0])));
+      pPhongBump.enable();
+      pPhongBump.setUniform("MVP", modelViewProjection);
+      pPhongBump.setUniform("MV", modelView);
+      pPhongBump.setUniform("M", modelMatrix);
+      pPhongBumpTex.setUniform("worldToShadow", worldToShadowMatrix);
+      pPhongBump.setUniform("MVit", modelViewIT);
+      pPhongBump.setUniform("lightPosition", lightPosition);
+      pPhongBump.setTexture("tn", udeNormals,0);
+      pPhongBump.setTexture("shadowMap", shadowMap, 1);
 
-    modelMatrix = {};
-    modelView = viewMatrix * modelMatrix;
-    modelViewProjection = projectionMatrix * modelView;
-    modelViewIT = Mat4::transpose(Mat4::inverse(modelView));
-
-    pPhongBump.enable();
-    pPhongBump.setUniform("MVP", modelViewProjection);
-    pPhongBump.setUniform("MV", modelView);
-    pPhongBump.setUniform("MVit", modelViewIT);
-    pPhongBump.setUniform("lightPosition", lightPosition);
-    pPhongBump.setTexture("tn", udeNormals,0);
-
-    teapotArray.bind();
-    GL(glDrawElements(GL_TRIANGLES, sizeof(Teapot::indices) / sizeof(Teapot::indices[0]), GL_UNSIGNED_INT, (void*)0));
+      teapotArray.bind();
+      GL(glDrawElements(GL_TRIANGLES, sizeof(Teapot::indices) / sizeof(Teapot::indices[0]), GL_UNSIGNED_INT, (void*)0));
   }
 
   virtual void resize(int width, int height) override {

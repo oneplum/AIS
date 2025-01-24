@@ -5,10 +5,14 @@ in vec3 normalViewSpaceInterpolated;
 in vec3 tangentViewSpaceInterpolated;
 in vec3 binormtViewSpaceInterpolated;
 in vec2 texCoordsInterpolated;
+in vec4 shadowPos;
 
 uniform sampler2D tn;
+uniform sampler2DShadow shadowMap;
 
 uniform vec4 lightPosition;
+
+uniform float depthBias = 0.01;
 
 uniform vec3 ka = vec3(0.05f, 0.05f, 0.05f); // material ambient color
 uniform vec3 kd = vec3(0.0f, 0.0f, 0.8f); // material diffuse color
@@ -56,5 +60,12 @@ void main() {
 
   vec3 specular = s * ks * ls;
 
-  color = vec4(ambient + diffuse + specular, 1);
+  vec4 biasedShadow = shadowPos;
+  biasedShadow.z -= depthBias;
+  float shadowPercentage = textureProj(shadowMap, biasedShadow);
+    
+  vec4 lightColor = vec4(ambient + diffuse + specular, 1);
+  vec4 shadowColor = vec4(ambient, 1);
+
+  color = mix(shadowColor, lightColor, shadowPercentage);
 }

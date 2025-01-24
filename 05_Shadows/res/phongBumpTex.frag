@@ -5,10 +5,13 @@ in vec3 normalViewSpaceInterpolated;
 in vec3 tangentViewSpaceInterpolated;
 in vec3 binormtViewSpaceInterpolated;
 in vec2 texCoordsInterpolated;
+in vec4 shadowPos;
 
 uniform sampler2D td;
 uniform sampler2D ts;
 uniform sampler2D tn;
+uniform sampler2DShadow shadowMap;
+uniform float depthBias = 0.01;
 
 uniform vec4 lightPosition;
 
@@ -58,6 +61,13 @@ void main() {
   }
 
   vec3 specular = s * ks * ls;
+    
+  vec4 biasedShadow = shadowPos;
+  biasedShadow.z -= depthBias;
+  float shadowPercentage = textureProj(shadowMap,biasedShadow);
 
-  color = vec4(ambient + diffuse + specular, 1);
+  vec4 lightColor = vec4(ambient + diffuse + specular, 1);
+  vec4 shadowColor = vec4(ambient, 1);
+
+  color = mix(shadowColor, lightColor, shadowPercentage);
 }
